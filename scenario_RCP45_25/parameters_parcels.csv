@@ -1,2 +1,2 @@
-index,parcel_id,size_parcels_ha,yield_per_ha,yield_tot_mtons,county
-1,1,350,6760.2442,2366085.47,Ventura
+index,parcel_id,size_parcels_ha,yield_kg_per_ha,yield_tot_mtons,county
+1,1,1000000,6.7602442,6760244.2,Ventura
