@@ -1,6 +1,6 @@
 index,warehouse_id,storage_cost_per_mt_dlls,capacity_mtons,capacity_lbs,name,City,State,xlon,ylat
-1,1,0,1000000,145800000,Oxnard,Oxnard,CA,-119.169472,34.199623
-2,2,1000,66133.76755,1458000,Watsonville_Cascade,Watsonville,CA,-121.765991,36.903774
+1,1,0,66133.76755,145800000,Oxnard,Oxnard,CA,-119.169472,34.199623
+2,2,1000,100000,1458000,Watsonville_Cascade,Watsonville,CA,-121.765991,36.903774
 3,3,1000,150000,1458000,Watsonville_Walker,Watsonville,CA,-121.765007,36.909187
 4,4,1000,100000,1458000,Watsonville_hilltop,Moss_Landing,CA,-121.776299,36.865559
 5,5,1000,150000,1458000,Santa_Maria,Santa_Maria,CA,-120.4573053,34.93768732
