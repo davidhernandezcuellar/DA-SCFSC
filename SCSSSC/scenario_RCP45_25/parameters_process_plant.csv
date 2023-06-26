@@ -1,3 +1,3 @@
-index,processplant_id,capacity_mtons,name,City,State,xlon,ylat
-1,1,500000,Oxnard,Oxnard,CA,-119.172817,34.19392015
-2,2,500000,test,test,test,-75.6311663,41.40746698
+index,processplant_id,capacity_mtons,processing_cost_per_mt_dlls,name,City,State,xlon,ylat
+1,1,500000,1,Oxnard,Oxnard,CA,-119.172817,34.19392015
+2,2,500000,1,test,test,test,-75.6311663,41.40746698
