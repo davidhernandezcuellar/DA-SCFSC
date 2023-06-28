@@ -1,5 +1,5 @@
 File_name,RCP4.5_Q1
-parameters_network,'https://raw.githubusercontent.com/davidhernandezcuellar/DH-SCFSC/main/SCSSSC/scenario_RCP45_25/parameters_network.csv'
+parameters_network,https://raw.githubusercontent.com/davidhernandezcuellar/DH-SCFSC/main/SCSSSC/scenario_RCP45_25/parameters_network.csv
 parameters_parcels,'https://raw.githubusercontent.com/davidhernandezcuellar/DH-SCFSC/main/SCSSSC/scenario_RCP45_25/parameters_parcels.csv'
 parameters_depots,'https://raw.githubusercontent.com/davidhernandezcuellar/DH-SCFSC/main/SCSSSC/scenario_RCP45_25/parameters_depots.csv'
 parameters_process_plant,'https://raw.githubusercontent.com/davidhernandezcuellar/DH-SCFSC/main/SCSSSC/scenario_RCP45_25/parameters_process_plant.csv'
