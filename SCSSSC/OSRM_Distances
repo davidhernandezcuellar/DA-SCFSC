@@ -1,0 +1,136 @@
+# Install OSRM packages
+!pip install requests
+
+
+#Import needed libraries
+import requests
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+import numpy as np # linear algebra
+
+#######################################################################################################
+
+# Indices and parameters: Network parameters
+# Importing network parameters from GitHub .csv file
+df = pd.read_csv('https://raw.githubusercontent.com/davidhernandezcuellar/DH-SCFSC/main/SCSSSC/scenario_RCP45_25/parameters_network.csv')
+# Converting data to Numpy array
+df_np = df.to_numpy()
+P = df_np[0,1] # Set of parcels (farms)
+D = df_np[0,2] # Set of potential Depots
+PP = df_np[0,3] # Set of Processing Plants
+W = df_np[0,4] # Set of warehouses
+C = df_np[0,5] # Set of customers
+
+
+# Indices and parameters: Network parameters
+# Importing network parameters from GitHub .csv file
+df = pd.read_csv('https://raw.githubusercontent.com/davidhernandezcuellar/DH-SCFSC/main/SCSSSC/scenario_RCP45_25/parameters_parcels.csv')
+# Converting data to Numpy array
+df_np = df.to_numpy()
+xlon_i = df_np[:,6] # longitudes of farms
+ylat_i = df_np[:,7] # latitudes of farms
+
+
+# Importing network parameters from GitHub .csv file
+df = pd.read_csv('https://raw.githubusercontent.com/davidhernandezcuellar/DH-SCFSC/main/SCSSSC/scenario_RCP45_25/parameters_depots.csv')
+# Converting data to Numpy array
+df_np = df.to_numpy()
+xlon_j = df_np[:,4] # longitudes of depots
+ylat_j = df_np[:,5] # latitudes of depots
+
+
+# Importing network parameters from GitHub .csv file
+df = pd.read_csv('https://raw.githubusercontent.com/davidhernandezcuellar/DH-SCFSC/main/SCSSSC/scenario_RCP45_25/parameters_process_plant.csv')
+# Converting data to Numpy array
+df_np = df.to_numpy()
+xlon_m = df_np[:,7] # longitudes of Process plants
+ylat_m = df_np[:,8] # latitudes of Process plants
+
+
+# Importing network parameters from GitHub .csv file
+df = pd.read_csv('https://raw.githubusercontent.com/davidhernandezcuellar/DH-SCFSC/main/SCSSSC/scenario_RCP45_25/parameters_warehouses.csv')
+# Converting data to Numpy array
+df_np = df.to_numpy()
+xlon_k = df_np[:,8] # longitudes of warehouses
+ylat_k = df_np[:,9] # latitudes of warehouses
+
+
+# Importing network parameters from GitHub .csv file
+df = pd.read_csv('https://raw.githubusercontent.com/davidhernandezcuellar/DH-SCFSC/main/SCSSSC/scenario_RCP45_25/parameters_customers.csv')
+# Converting data to Numpy array
+df_np = df.to_numpy()
+xlon_l = df_np[:,4] # longitudes of customers
+ylat_l = df_np[:,5] # latitudes of customers
+
+
+#######################################################################################################
+
+# computing distances from farms to Processing Plant (34.19392015019283, -119.17281696877198)
+for i in range(P):
+    for m in range(PP):
+        url = "http://router.project-osrm.org/route/v1/driving/"+str(xlon_i[i])+","+str(ylat_i[i])+";"+str(xlon_m[m])+","+str(ylat_m[m])
+        # url = "http://router.project-osrm.org/route/v1/driving/-119.123569,34.258908;-119.172791,34.193951"
+        r = requests.get(url)
+        res = r.json()
+        print(res['routes'][0]['distance'])
+
+#######################################################################################################
+
+# computing distances from farms to Depots
+for i in range(P):
+    for j in range(D):
+        url = "http://router.project-osrm.org/route/v1/driving/"+str(xlon_i[i])+","+str(ylat_i[i])+";"+str(xlon_j[j])+","+str(ylat_j[j])
+        #url = "http://router.project-osrm.org/route/v1/driving/-119.123569,34.258908;-119.172791,34.193951"
+        r = requests.get(url)
+        res = r.json()
+        print(res['routes'][0]['distance'])
+
+#######################################################################################################
+
+# computing distances from farms to Warehouses
+for i in range(P):
+    for k in range(W):
+        url = "http://router.project-osrm.org/route/v1/driving/"+str(xlon_i[i])+","+str(ylat_i[i])+";"+str(xlon_k[k])+","+str(ylat_k[k])
+        r = requests.get(url)
+        res = r.json()
+        print(res['routes'][0]['distance'])
+
+#######################################################################################################
+
+# computing distances from depots to Processing Plant (34.19392015019283, -119.17281696877198)
+for j in range(D):
+    for m in range(PP):
+        url = "http://router.project-osrm.org/route/v1/driving/"+str(xlon_j[j])+","+str(ylat_j[j])+";"+str(xlon_m[m])+","+str(ylat_m[m])
+        r = requests.get(url)
+        res = r.json()
+        print(res['routes'][0]['distance'])
+
+#######################################################################################################
+
+# computing distances from depots to Warehouses
+for j in range(D):
+    for k in range(W):
+        url = "http://router.project-osrm.org/route/v1/driving/"+str(xlon_j[j])+","+str(ylat_j[j])+";"+str(xlon_k[k])+","+str(ylat_k[k])
+        r = requests.get(url)
+        res = r.json()
+        print(res['routes'][0]['distance'])
+
+#######################################################################################################
+
+# computing distances from Processing Plants (34.19392015019283, -119.17281696877198) to Warehouses
+for m in range(PP):
+    for k in range(W):
+        url = "http://router.project-osrm.org/route/v1/driving/"+str(xlon_m[m])+","+str(ylat_m[m])+";"+str(xlon_k[k])+","+str(ylat_k[k])
+        r = requests.get(url)
+        res = r.json()
+        print(res['routes'][0]['distance'])
+
+#######################################################################################################
+
+# computing distances from warehouses to final destinations (customers)
+for k in range(W):
+    for l in range(C):
+        url = "http://router.project-osrm.org/route/v1/driving/"+str(xlon_k[k])+","+str(ylat_k[k])+";"+str(xlon_l[l])+","+str(ylat_l[l])
+        r = requests.get(url)
+        res = r.json()
+        print(res['routes'][0]['distance'])
+
