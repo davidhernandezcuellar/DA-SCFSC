@@ -1,0 +1,920 @@
+# Start timer
+from timeit import default_timer as timer
+start = timer()
+
+###################################################################################################
+
+
+# Initialize the CPLEX environment and model
+import cplex
+print(cplex.__version__)
+
+# from cplex import Cplex
+from cplex.exceptions import CplexError
+
+# Import needed libraries
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+import numpy as np # linear algebra
+
+# Libraries por the pop-up windows
+import tkinter as tk
+from tkinter import messagebox
+from tkinter import simpledialog
+
+###################################################################################################
+
+
+# Optimization algorithm (Hub and spoke model)
+def SCSSSC(parameters_network, parameters_parcels, parameters_depots, parameters_process_plant, parameters_warehouses, parameters_customers, Loss, transp_param, parameters_T1, parameters_T2, parameters_T3, parameters_T4, parameters_T5, parameters_T6, parameters_T7, supply_factor):
+    # Indices and parameters: Network parameters
+    # Importing network parameters from GitHub .csv file
+    df = pd.read_csv(parameters_network)
+    # Converting data to Numpy array
+    df_np = df.to_numpy()
+    P = df_np[0,1] # Set of parcels (farms)
+    D = df_np[0,2] # Set of potential Depots
+    PP = df_np[0,3] # Set of Processing Plants
+    W = df_np[0,4] # Set of warehouses
+    C = df_np[0,5] # Set of customers
+    
+    
+    # Indices and parameters: Locations parameters
+
+    # Importing parcels (farms) parameters from GitHub .csv file
+    df = pd.read_csv(parameters_parcels)
+    # Converting data to Numpy array
+    df_np = df.to_numpy()
+    s = np.empty([P, 1]) # Creating a matrix the size of # parcels (P) times (1)
+    for i in range(P): # Loading yield of each parcel (farm)
+        s[i] = df_np[i][2] * df_np[i][3]
+
+    # Importing depots parameters from GitHub .csv file
+    df = pd.read_csv(parameters_depots)
+    # Converting data to Numpy array
+    df_np = df.to_numpy()
+    u_j = np.empty([D, 1]) # Creating a storage capacity matrix the size of # depots (D) times (1)
+    small_zeta_j = np.empty([D, 1]) # Creating a investment cost matrix the size of # depots (D) times (1)
+    for j in range(D): # Loading storage capacity and investment cost of each depot
+        u_j[j] = df_np[j][3]
+        small_zeta_j[j] = df_np[j][2]
+
+    # Importing Process Plant parameters from GitHub .csv file
+    df = pd.read_csv(parameters_process_plant)
+    # Converting data to Numpy array
+    df_np = df.to_numpy()
+    u_p = np.empty([PP, 1]) # Creating a matrix the size of (PP) times (1)
+    small_zeta_m = np.empty([PP, 1]) # Creating a processing cost matrix the size of # warehouses (PP) times (1)
+    for m in range(PP): # Loading processing plants storage capacites
+        u_p[m] = df_np[m][2]
+        small_zeta_m[m] = df_np[m][3]
+
+    # Importing warehouses parameters from GitHub .csv file
+    df = pd.read_csv(parameters_warehouses)
+    # Converting data to Numpy array
+    df_np = df.to_numpy()
+    u_k = np.empty([W, 1]) # Creating a storage capacity matrix the size of # warehouses (W) times (1)
+    small_zeta_k = np.empty([W, 1]) # Creating a investment cost matrix the size of # warehouses (W) times (1)
+    for k in range(W): # Loading storage capacity and investment cost of each warehouse
+        u_k[k] = df_np[k][3]
+        small_zeta_k[k] = df_np[k][2]
+
+    # Importing customers parameters from GitHub .csv file
+    df = pd.read_csv(parameters_customers)
+    # Converting data to Numpy array
+    df_np = df.to_numpy()
+    d_whole = np.empty([C, 1]) # Creating a demand of whole strawberry matrix the size of # customers (C) times (1)
+    d_mush = np.empty([C, 1]) # Creating a demand of mush strawberry matrix the size of # customers (C) times (1)
+    for l in range(C): # Loading whole and mush demand of each customer
+        d_whole[l] = df_np[l][2]
+        d_mush[l] = df_np[l][3]
+
+    
+    # Indices and parameters: transportation costs
+    # Importing transportation costs from GitHub .csv file
+    df = pd.read_csv(transp_param)
+    # Converting data to Numpy array
+    df_np = df.to_numpy()
+
+    v = []
+    small_psi = []
+    small_rho = []
+    for i in range(len(df_np)):
+        if df_np[i,0].startswith('avg_kmph') == True: # Average Trucks Speed
+            v.append(df_np[i,1])
+        elif df_np[i,0].startswith('truck_op_cost') == True: # Trucks Operational Cost
+            small_psi.append(df_np[i,1])
+        elif df_np[i,0].startswith('loading_cost') == True: # Loading Cost
+            L = df_np[i,1]
+        elif df_np[i,0].startswith('unloading_cost') == True: # Unloading Cost
+            U = df_np[i,1]
+        elif df_np[i,0].startswith('stacking_cost') == True: # Stacking Cost
+            small_mu = df_np[i,1]
+        elif df_np[i,0].startswith('trip_factor') == True: # Round Trip Factor
+            small_theta = df_np[i,1]
+        elif df_np[i,0].startswith('truck_capacity') == True: # Trucks Load Capacity
+            small_rho.append(df_np[i,1])
+        elif df_np[i,0].startswith('TRU_threshold') == True: # Threshold distance to travel in order to consider a TRU
+            TRU_threshold = df_np[i,1]
+        elif df_np[i,0].startswith('TRU_factor') == True: # Factor which will multiply the transportation cost to convert it into a cold transportation cost
+            TRU_factor = df_np[i,1]
+        elif df_np[i,0].startswith('max_wt_plt') == True: # Maximum weight to ship per pallet in metric tons (1,800 lbs according to mode)
+            max_wt_plt = df_np[i,1]
+        elif df_np[i,0].startswith('plt_wt') == True: # Weight of a pallet to be considered in the shipping cost
+            plt_wt = df_np[i,1]
+    
+  
+    # Transforming lists to matrices
+    v = np.array(v)
+    small_psi = np.array(small_psi)
+    small_rho = np.array(small_rho)
+    
+    
+    # Indices and parameters: transportation distances "im"
+    # Importing transportation costs from GitHub .csv file
+    df = pd.read_csv(parameters_T1)
+    # Converting data to Numpy array
+    df_np = df.to_numpy()
+    #print(df)
+    #print(df_np)
+    x_im = np.empty([P, PP]) # Creating a distance matrix the size of # parcels (P) times # of Processing Plants (PP)
+    counter = 0 # Counter used to extract the values from the data file
+    c_im = np.empty([P, PP]) # Creating a cost matrix the size of # parcels (P) times # of Processing Plants (1)
+    for i in range(P): # Loading distance value between each location
+        for m in range(PP):
+            x_im[i, m] = df_np[counter][3]
+            counter = counter + 1
+            if x_im[i, m] <= TRU_threshold: #if the distance is less than 60 Km, it can be without TRU
+                c_im[i, m] = L + U + small_mu + ((x_im[i, m] * small_theta * small_psi[0]) / (v[0] * small_rho[0])) # Computing the transportation cost
+            else:
+                c_im[i, m] = L + U + small_mu + ((TRU_factor * x_im[i, m] * small_theta * small_psi[0]) / (v[0] * small_rho[0])) # Multiplying the cost times 1.2 to include the refrigeration cost
+
+    # Indices and parameters: transportation distances "ij"
+    # Importing transportation costs from GitHub .csv file
+    df = pd.read_csv(parameters_T2)
+    # Converting data to Numpy array
+    df_np = df.to_numpy()
+    x_ij = np.empty([P, D]) # Creating a distance matrix the size of # parcels (P) times # of depots (D)
+    counter = 0 # Counter used to extract the values from the data file
+    c_ij = np.empty([P, D]) # Creating a cost matrix the size of # parcels (P) times # of depots (D)
+    for i in range(P): # Loading distance value between each location
+        for j in range(D):
+            x_ij[i, j] = df_np[counter][3]
+            counter = counter + 1
+            if x_ij[i, j] <= TRU_threshold: #if the distance is less than 60 Km, it can be without TRU
+                c_ij[i, j] = L + U + small_mu + ((x_ij[i, j] * small_theta * small_psi[1]) / (v[1] * small_rho[1])) # Computing the transportation cost
+            else:
+                c_ij[i, j] = L + U + small_mu + ((TRU_factor * x_ij[i, j] * small_theta * small_psi[1]) / (v[1] * small_rho[1])) # Multiplying the cost times 1.2 to include the refrigeration cost
+
+    # Indices and parameters: transportation distances "ik"
+    # Importing transportation costs from GitHub .csv file
+    df = pd.read_csv(parameters_T3)
+    # Converting data to Numpy array
+    df_np = df.to_numpy()
+    x_ik = np.empty([P, W]) # Creating a distance matrix the size of # parcels (P) times # of warehouses (W)
+    counter = 0 # Counter used to extract the values from the data file
+    c_ik = np.empty([P, W]) # Creating a cost matrix the size of # parcels (P) times # of warehouses (W)
+    for i in range(P): # Loading distance value between each location
+        for k in range(W):
+            x_ik[i, k] = df_np[counter][3]
+            counter = counter + 1
+            if x_ik[i, k] <= TRU_threshold: #if the distance is less than 60 Km, it can be without TRU
+                c_ik[i, k] = L + U + small_mu + ((x_ik[i, k] * small_theta * small_psi[2]) / (v[2] * small_rho[2])) # Computing the transportation cost
+            else:
+                c_ik[i, k] = L + U + small_mu + ((TRU_factor * x_ik[i, k] * small_theta * small_psi[2]) / (v[2] * small_rho[2])) # Multiplying the cost times 1.2 to include the refrigeration cost
+
+    # Indices and parameters: transportation distances "jm"
+    # Importing transportation costs from GitHub .csv file
+    df = pd.read_csv(parameters_T4)
+    # Converting data to Numpy array
+    df_np = df.to_numpy()
+    x_jm = np.empty([D, PP]) # Creating a matrix the size of # depots (D) times # of Processing Plants (PP)
+    counter = 0 # Counter used to extract the values from the data file
+    for j in range(D): # Loading distance value between each location
+        for m in range(PP):
+            x_jm[j, m] = df_np[counter][3]
+            counter = counter + 1
+    c_jm = L + U + small_mu + ((TRU_factor * x_jm * small_theta * small_psi[3]) / (v[3] * small_rho[3])) # Computing the transportation cost
+
+    # Indices and parameters: transportation distances "jk"
+    # Importing transportation costs from GitHub .csv file
+    df = pd.read_csv(parameters_T5)
+    # Converting data to Numpy array
+    df_np = df.to_numpy()
+    x_jk = np.empty([D, W]) # Creating a matrix the size of # depots (D) times # of warehouses (W)
+    counter = 0 # Counter used to extract the values from the data file
+    for j in range(D): # Loading distance value between each location
+        for k in range(W):
+            x_jk[j, k] = df_np[counter][3]
+            counter = counter + 1
+    c_jk = L + U + small_mu + ((TRU_factor * x_jk * small_theta * small_psi[4]) / (v[4] * small_rho[4])) # Computing the transportation cost
+
+    # Indices and parameters: transportation distances "mk"
+    # Importing transportation costs from GitHub .csv file
+    df = pd.read_csv(parameters_T6)
+    # Converting data to Numpy array
+    df_np = df.to_numpy()
+    x_mk = np.empty([PP, W]) # Creating a matrix the size of # of Processing Plants (PP) times the # of warehouses (W)
+    counter = 0 # Counter used to extract the values from the data file
+    for m in range(PP): # Loading distance value between each location
+        for k in range(W):
+            x_mk[m, k] = df_np[counter][3]
+            counter = counter + 1
+    c_mk = L + U + small_mu + ((TRU_factor * x_mk * small_theta * small_psi[5]) / (v[5] * small_rho[5])) # Computing the transportation cost
+
+    # Indices and parameters: transportation distances "kl"
+    # Importing transportation costs from GitHub .csv file
+    df = pd.read_csv(parameters_T7)
+    # Converting data to Numpy array
+    df_np = df.to_numpy()
+    x_kl = np.empty([W, C]) # Creating a matrix the size of # warehouses (W) times the # of customers (C)
+    counter = 0 # Counter used to extract the values from the data file
+    for k in range(W): # Loading distance value between each location
+        for l in range(C):
+            x_kl[k, l] = df_np[counter][3]
+            counter = counter + 1
+    c_kl = L + U + small_mu + ((TRU_factor * x_kl * small_theta * small_psi[6]) / (v[6] * small_rho[6])) # Computing the transportation cost
+
+    
+    # We can set a coefficient in case we want to modify the supply from the farms
+    s = s * supply_factor
+    
+    
+    # Initialize the model
+    opt_model = cplex.Cplex()
+    opt_model.set_problem_name('cost optimization')
+    opt_model.get_problem_name()
+
+    
+    # Create a dictionary of continuous variables
+    f_im = {} # Flows of mass from a parcel (farm) "i" to the processing plant "m"
+    for i in range(P):
+        for m in range(PP):
+            f_im[i,m] = opt_model.variables.add(types=['C'], names=[f'fppp_{i}_{m}'])
+
+    f_ij = {} # Flows of mass from a parcel (farm) "i" to a depot "j"
+    for i in range(P):
+        for j in range(D):
+            f_ij[i,j] = opt_model.variables.add(types=['C'], names=[f"fpd_{i}_{j}"])
+
+    f_ik = {} # Flows of mass from a parcel (farm) "i" to a warehouse "k"
+    for i in range(P):
+        for k in range(W):
+            f_ik[i,k] = opt_model.variables.add(types=['C'], names=[f"fpw_{i}_{k}"])
+
+    f_jm = {} # Flows of mass from a depot "j" to the processing plant "m"
+    for j in range(D):
+        for m in range(PP):
+            f_jm[j,m] = opt_model.variables.add(types=['C'], names=[f"fdpp_{j}_{m}"])
+
+    f_jk = {} # Flows of mass from a depot "j" to a warehouse "k"
+    for j in range(D):
+        for k in range(W):
+            f_jk[j,k] = opt_model.variables.add(types=['C'], names=[f"fdw_{j}_{k}"])
+
+    f_mk = {} # Flows of mass from the processing plant "m" to a warehouse "k"
+    for m in range(PP):
+        for k in range(W):
+            f_mk[m,k] = opt_model.variables.add(types=['C'], names=[f"fppw_{m}_{k}"])
+
+    f_kl = {} # Flows of mass from a warehouse "k" to a customer "l"
+    for k in range(W):
+        for l in range(C):
+            f_kl[k,l] = opt_model.variables.add(types=['C'], names=[f"fwc_{k}_{l}"])
+
+
+    # Define the decision variables: State variables
+    small_delta = {} # A binary variable which takes the value of 1 if j ∈ D is used as depot, otherwise 0
+    for j in range (D):
+        small_delta[j]=opt_model.variables.add(lb=[0.0], ub=[1.0], types=['B'], names=[f"small_delta_{j}"])
+
+    small_omega = {} # A binary variable which takes the value of 1 if k ∈ W is used as a warehouse, otherwise 0
+    for k in range (W):
+        small_omega[k]=opt_model.variables.add(lb=[0.0], ub=[1.0], types=['B'], names=[f"small_omega_{k}"])
+
+    capital_rho = {} # A binary variable which takes the value of 1 if m ∈ PP is used as a Processing Plant, otherwise 0
+    for m in range (PP):
+        capital_rho[m]=opt_model.variables.add(lb=[0.0], ub=[1.0], types=['B'], names=[f"capital_rho_{m}"])
+    
+    
+    # Objective Function: Minimize total logistic cost
+    opt_model.objective.set_sense(opt_model.objective.sense.minimize)
+    counter = 0
+
+    for i in range(P): # Costs of transporting strawberries from "i" parcels (farms) to processing plant "m"
+        for m in range(PP):
+            opt_model.objective.set_linear([(f'fppp_{i}_{m}', c_im[i][m])])
+
+    for i in range(P): # Costs of transporting strawberries from "i" parcels (farms) to "j" depots
+        for j in range(D):
+            opt_model.objective.set_linear([(f'fpd_{i}_{j}', c_ij[i][j])])
+
+    for i in range(P): # Costs of transporting strawberries from "i" parcels (farms) to "k" warehouses
+        for k in range(W):
+            opt_model.objective.set_linear([(f'fpw_{i}_{k}', c_ik[i][k])])
+
+    for j in range(D): # Costs of transporting strawberries from "j" depots to processing plant "m"
+        for m in range(PP):
+            opt_model.objective.set_linear([(f'fdpp_{j}_{m}', c_jm[j][m])])
+
+    for j in range(D): # Costs of transporting strawberries from "j" depots to "k" warehouses
+        for k in range(W):
+            opt_model.objective.set_linear([(f'fdw_{j}_{k}', c_jk[j][k])])
+
+    for m in range(PP): # Costs of transporting strawberries from the processing plant to "k" warehouses
+        for k in range(W):
+            opt_model.objective.set_linear([(f'fppw_{m}_{k}', c_mk[m][k])])
+
+    for k in range(W): # Costs of transporting strawberries from "k" warehouses to "l" customers
+        for l in range(C):
+            opt_model.objective.set_linear([(f'fwc_{k}_{l}', ((1 + plt_wt / max_wt_plt) * c_kl[k][l]))])
+
+    for j in range(D): # Cost of building a new depot
+        opt_model.objective.set_linear([(f'small_delta_{j}', small_zeta_j[j][0])])
+
+    for i in range(P): # Costs of storaging strawberries in "k" warehouse, part 1
+        for k in range(W):
+            opt_model.objective.set_quadratic_coefficients(
+                f'small_omega_{k}', f'fpw_{i}_{k}', small_zeta_k[k][0]
+            )
+
+    for j in range(D): # Costs of storaging strawberries in "k" warehouse, part 2
+        for k in range(W):
+            opt_model.objective.set_quadratic_coefficients(
+                f'small_omega_{k}', f'fdw_{j}_{k}', small_zeta_k[k][0]
+            )
+
+    for m in range(PP):
+        for k in range(W): # Costs of storaging strawberries in "k" warehouse, part 3
+            opt_model.objective.set_quadratic_coefficients(
+                f'small_omega_{k}', f'fppw_{m}_{k}', small_zeta_k[k][0]
+            )
+    
+    for i in range(P): # Costs of processing strawberries in "m" Processing Plant, part 1
+        for m in range(PP):
+            opt_model.objective.set_quadratic_coefficients(
+                f'capital_rho_{m}', f'fppp_{i}_{m}', small_zeta_m[m][0]
+            )
+    
+    for j in range(D): # Costs of processing strawberries in "m" Processing Plant, part 2
+        for m in range(PP):
+            opt_model.objective.set_quadratic_coefficients(
+                f"capital_rho_{m}", f'fdpp_{j}_{m}', small_zeta_m[m][0]
+            )
+    
+    # ############################# Constraints #############################
+    # 1st Constraint: Restriction of supply of good for every parcel to the maximum yield
+    for i in range(P):
+        opt_model.linear_constraints.add(
+            lin_expr = [cplex.SparsePair(
+                ind=[
+                    *[f'fppp_{i}_{m}' for m in range(PP)],
+                    *[f'fpd_{i}_{j}' for j in range(D)],
+                    *[f'fpw_{i}_{k}' for k in range(W)]
+                ],
+                val = [
+                    *[1 for m in range(PP)],
+                    *[1 for j in range(D)],
+                    *[1 for k in range(W)]
+                ]
+            )],
+            rhs=s[i],
+            senses=['L'],
+            names=["Parcel Supply Const_" + str(i)]
+        )
+    
+    # 2nd Constraint: Mass balance in depots
+    for j in range(D):
+        opt_model.linear_constraints.add(
+            lin_expr = [cplex.SparsePair(
+                ind=[
+                    *[f'fpd_{i}_{j}' for i in range(P)],
+                    *[f'fdpp_{j}_{m}' for m in range(PP)],
+                    *[f'fdw_{j}_{k}' for k in range(W)]
+                ],
+                val = [
+                    *[1 for i in range(P)],
+                    *[-1 for m in range(PP)],
+                    *[-1 for k in range(W)]
+                ]
+            )],
+            rhs=[0],
+            senses=['E'],
+            names=["D mass balance Const_" + str(j)]
+        )
+    
+    # 3rd Constraint: Mass balance in processing plants
+    for m in range(PP):
+        opt_model.linear_constraints.add(
+            lin_expr = [cplex.SparsePair(
+                ind=[
+                    *[f'fppp_{i}_{m}' for i in range(P)],
+                    *[f'fdpp_{j}_{m}' for j in range(D)],
+                    *[f'fppw_{m}_{k}' for k in range(W)]
+                ],
+                val = [
+                    *[1 for i in range(P)],
+                    *[1 for j in range(D)],
+                    *[-1 for k in range(W)]
+                ]
+            )],
+            rhs=[0],
+            senses=['E'],
+            names=["PP mass balance Const_" + str(1)]
+        )
+    
+    # 4th Constraint: Mass balance in warehouses
+    for k in range(W):
+        opt_model.linear_constraints.add(
+            lin_expr = [cplex.SparsePair(
+                ind=[
+                    *[f'fpw_{i}_{k}' for i in range(P)],
+                    *[f'fdw_{j}_{k}' for j in range(D)],
+                    *[f'fppw_{m}_{k}' for m in range(PP)],
+                    *[f'fwc_{k}_{l}' for l in range(C)]
+                ],
+                val = [
+                    *[1 for i in range(P)],
+                    *[1 for j in range(D)],
+                    *[1 for m in range(PP)],
+                    *[-1 for l in range(C)]
+                ]
+            )],
+            rhs=[0],
+            senses=['G'],
+            names=["Warehouse mass balance Const_" + str(k)]
+        )
+    
+    # 5th Constraint: Ensures strawberry (whole) demand satisfaction
+    opt_model.linear_constraints.add(
+        lin_expr = [cplex.SparsePair(
+            ind=[
+                *[f'fpw_{i}_{k}' for i in range(P) for k in range(W)],
+                *[f'fdw_{j}_{k}' for j in range(D) for k in range(W)]
+            ],
+            val = [
+                *[1 for i in range(P) for k in range(W)],
+                *[1 for j in range(D) for k in range(W)]
+            ]
+        )],
+        rhs=[Loss + sum(d_whole)[0]],
+        senses=['G'],
+        names=["whole berry demand Const"]
+    )
+    
+    # 6th Constraint: Ensures strawberry mush demand satisfaction
+    opt_model.linear_constraints.add(
+        lin_expr = [cplex.SparsePair(
+            ind=[
+                *[f'fppw_{m}_{k}' for m in range(PP) for k in range(W)]
+            ],
+            val = [
+                *[1 for m in range(PP) for k in range(W)]
+            ]
+        )],
+        rhs=[Loss + sum(d_mush)[0]],
+        senses=['G'],
+        names=["mushed berry demand Const"]
+    )
+    
+    # 7th Constraint: Ensures the flow of product to satisfy the total demand per customer
+    for l in range(C):
+        opt_model.linear_constraints.add(
+            lin_expr = [cplex.SparsePair(
+                ind=[
+                    *[f'fwc_{k}_{l}' for k in range(W)]
+                ],
+                val = [
+                    *[1 for k in range(W)]
+                ]
+            )],
+            rhs=[d_whole[l,0] + d_mush[l,0]],
+            senses=['E'],
+            names=["Total demand per customer Const_" + str(l)]
+            )
+    
+    # 8th Constraint: Ensures that strawberries stored is less than the capacity at depots
+    for j in range(D):
+        opt_model.linear_constraints.add(
+            lin_expr = [cplex.SparsePair(
+                ind=[
+                    *[f'fpd_{i}_{j}' for i in range(P)],
+                    f'small_delta_{j}'
+                ],
+                val = [
+                    *[1 for i in range(P)],
+                    -1 * u_j[j,0]
+                ]
+            )],
+            rhs=[0],
+            senses=['L'],
+            names=["D storage capacity Const_" + str(j)]
+        )
+    
+    # 9th Constraint: Ensures that strawberries stored is less than the capacity at Warehouses
+    for k in range(W):
+        opt_model.linear_constraints.add(
+            lin_expr = [cplex.SparsePair(
+                ind=[
+                    *[f'fpw_{i}_{k}' for i in range(P)],
+                    *[f'fdw_{j}_{k}' for j in range(D)],
+                    *[f'fppw_{m}_{k}' for m in range(PP)],
+                    f'small_omega_{k}'
+                ],
+                val = [
+                    *[1 for i in range(P)],
+                    *[1 for j in range(D)],
+                    *[1 for m in range(PP)],
+                    -1 * u_k[k,0]
+                ]
+            )],
+            rhs=[0],
+            senses=['L'],
+            names=["W storage capacity Const_" + str(k)]
+        )
+    
+    # 10th Constraint: Ensures that strawberries arriving is less than the capacity at Process Plant
+    for m in range(PP):
+        opt_model.linear_constraints.add(
+            lin_expr = [cplex.SparsePair(
+                ind=[
+                    *[f'fppp_{i}_{m}' for i in range(P)],
+                    *[f'fdpp_{j}_{m}' for j in range(D)]
+                ],
+                val = [
+                    *[1 for i in range(P)],
+                    *[1 for j in range(D)]
+                ]
+            )],
+            rhs=[u_p[m,0]],
+            senses=['L'],
+            names=["PP storage capacity Const_" + str(1)]
+        )
+    
+    # 11th Constraint: Ensures that if that a warehouse is not going to be activated if no straberry is flowing to reach that warehouse
+    for k in range(W):
+        opt_model.linear_constraints.add(
+            lin_expr = [cplex.SparsePair(
+                ind=[
+                    *[f'fpw_{i}_{k}' for i in range(P)],
+                    *[f'fdw_{j}_{k}' for j in range(D)],
+                    *[f'fppw_{m}_{k}' for m in range(PP)],
+                    f'small_omega_{k}'
+                ],
+                val = [
+                    *[1 for i in range(P)],
+                    *[1 for j in range(D)],
+                    *[1 for m in range(PP)],
+                    -1
+                ]
+            )],
+            rhs=[0],
+            senses=['G'],
+            names=["Warehouse availability Const_" + str(k)]
+        )
+    
+    # 12th Constraint: Ensures that if that a Processing Plant is going to be activated if straberry is flowing to such PP
+    for m in range(PP):
+        opt_model.linear_constraints.add(
+            lin_expr = [cplex.SparsePair(
+                ind=[
+                    *[f'fppp_{i}_{m}' for i in range(P)],
+                    *[f'fdpp_{j}_{m}' for j in range(D)],
+                    f'capital_rho_{m}'
+                ],
+                val = [
+                    *[1 for i in range(P)],
+                    *[1 for j in range(D)],
+                    -1000000000
+                ]
+            )],
+            rhs=[0],
+            senses=['L'],
+            names=["Processsing plant usage Const_" + str(m)]
+        )
+    
+    # 13th Constraint: Ensures that if that a Processing Plant is not going to be activated if no straberry is flowing to such PP
+    for m in range(PP):
+        opt_model.linear_constraints.add(
+            lin_expr = [cplex.SparsePair(
+                ind=[
+                    *[f'fppp_{i}_{m}' for i in range(P)],
+                    *[f'fdpp_{j}_{m}' for j in range(D)],
+                    f'capital_rho_{m}'
+                ],
+                val = [
+                    *[1 for i in range(P)],
+                    *[1 for j in range(D)],
+                    -1
+                ]
+            )],
+            rhs=[0],
+            senses=['G'],
+            names=["Processsing plant usage Const_" + str(m)]
+        )
+        
+    # 14th Constraint: Ensures non-negative flows in any of the journeys
+    for i in range(P):
+        for m in range(PP):
+            opt_model.linear_constraints.add(
+                lin_expr = [cplex.SparsePair(
+                    ind=[
+                        f'fppp_{i}_{m}'
+                    ],
+                    val = [
+                        1
+                    ]
+                )],
+                rhs=[0],
+                senses=['G'],
+                names=[f"im positive flow Const_{i}_{m}"]
+            )
+
+    for i in range(P):
+        for j in range(D):
+            opt_model.linear_constraints.add(
+                lin_expr = [cplex.SparsePair(
+                    ind=[
+                        f'fpd_{i}_{j}'
+                    ],
+                    val = [
+                        1
+                    ]
+                )],
+                rhs=[0],
+                senses=['G'],
+                names=[f"ij positive flow Const_{i}_{j}"]
+            )
+
+    for i in range(P):
+        for k in range(W):
+            opt_model.linear_constraints.add(
+                lin_expr = [cplex.SparsePair(
+                    ind=[
+                        f'fpw_{i}_{k}'
+                    ],
+                    val = [
+                        1
+                    ]
+                )],
+                rhs=[0],
+                senses=['G'],
+                names=[f"ik positive flow Const_{i}_{k}"]
+            )
+
+    for j in range(D):
+        for m in range(PP):
+            opt_model.linear_constraints.add(
+                lin_expr = [cplex.SparsePair(
+                    ind=[
+                        f'fdpp_{j}_{m}'
+                    ],
+                    val = [
+                        1
+                    ]
+                )],
+                rhs=[0],
+                senses=['G'],
+                names=["j positive flow Const_" + str(j)]
+        )
+
+    for j in range(D):
+        for k in range(W):
+            opt_model.linear_constraints.add(
+                lin_expr = [cplex.SparsePair(
+                    ind=[
+                        f'fdw_{j}_{k}'
+                    ],
+                    val = [
+                        1
+                    ]
+                )],
+                rhs=[0],
+                senses=['G'],
+                names=["jk positive flow Const_" + str(j+k)]
+            )
+
+    for m in range(PP):
+        for k in range(W):
+            opt_model.linear_constraints.add(
+                lin_expr = [cplex.SparsePair(
+                    ind=[
+                        f'fppw_{m}_{k}'
+                    ],
+                    val = [
+                        1
+                    ]
+                )],
+                rhs=[0],
+                senses=['G'],
+                names=[f"k positive flow Const__{m}_{k}"]
+            )
+
+    for k in range(W):
+        for l in range(C):
+            opt_model.linear_constraints.add(
+                lin_expr = [cplex.SparsePair(
+                    ind=[
+                        f'fwc_{k}_{l}'
+                    ],
+                    val = [
+                        1
+                    ]
+                )],
+                rhs=[0],
+                senses=['G'],
+                names=["kl positive flow Const_" + str(k+l)]
+            )
+    
+    
+    # Name the model
+    opt_model.write("cost_optimization_python.lp")
+    
+    
+    # Solve the model
+    opt_model.set_results_stream(0)
+    sol_model = opt_model.solve()
+    
+
+
+    # Output solution
+#     opt_results = np.empty([(P*D*W*PP+1),2]) # Creating a results matrix the size of # (P*D*W*PP+1) times (2) to store objective value and flows between nodes
+    opt_results = {}
+    
+    # Store the objective value
+    opt_results["Obj. Value"] = opt_model.solution.get_objective_value()
+    
+    # Store the flows between nodes
+    for i in range (P): # Mass flow from farms to Process Plants
+        for m in range (PP):
+            opt_results[f"P {i} to PP {m} (f_im[{i},{m}])"] = f"{opt_model.solution.get_values(f'fppp_{i}_{m}')}"
+    
+    for i in range (P): # Mass flow from farms to depots
+        for j in range (D):
+            opt_results[f"P {i} to D {j} (f_ij[{i},{j}])"] = f"{opt_model.solution.get_values(f'fpd_{i}_{j}')}"
+
+    for i in range (P): # Mass flow from farms to warehouses
+        for k in range (W):
+            opt_results[f"P {i} to W {k} (f_ik[{i},{k}])"] = f"{opt_model.solution.get_values(f'fpw_{i}_{k}')}"
+
+    for j in range (D): # Mass flow from depots to Process plants
+        for m in range (PP):
+            opt_results[f"D {j} to PP {m} (f_j[{j},{m}])"] = f"{opt_model.solution.get_values(f'fdpp_{j}_{m}')}"
+
+    for j in range (D): # Mass flow from depots to warehouses
+        for k in range (W):
+            opt_results[f"D {j} to W {k} (f_jk[{j},{k}])"] = f"{opt_model.solution.get_values(f'fdw_{j}_{k}')}"
+
+    for m in range (PP):
+        for k in range (W): # Mass flow from Process plants to warehouses
+            opt_results[f"PP {m} to W {k} (f_k[{m},{k}])"] = f"{opt_model.solution.get_values(f'fppw_{m}_{k}')}"
+
+    for k in range (W): # Mass flow from warehouses to customers
+        for l in range (C):
+            opt_results[f"W {k} to C {l} (f_kl[{k},{l}])"] = f"{opt_model.solution.get_values(f'fwc_{k}_{l}')}"
+    
+    
+    obj_value = opt_model.solution.get_objective_value()
+
+
+    return(opt_results)
+
+###################################################################################################
+
+# Function to create the dialog box
+
+def get_float_input():
+    while True:
+        try:
+            # Create a Tkinter root window
+            root = tk.Tk()
+
+            # Hide the root window (optional)
+            root.withdraw()
+                                    
+            # Ask for user input using a pop-up dialog box
+            yield_tol = simpledialog.askfloat("User Input", "How much percentage? enter a number between 0 - 100 without symbols (%)")
+            if yield_tol is not None:
+                if 0 <= yield_tol <= 100:
+                    # Close the Tkinter root window (optional)
+                    root.destroy()
+                    return yield_tol
+                else:
+                    messagebox.showerror(None, 'Invalid input. Please enter a number between 0 - 100 without symbols (%)')
+            else:
+                messagebox.showerror(None, 'No input provided')
+        except ValueError:
+            messagebox.showerror(None, 'Invalid input. Please enter a number between 0 - 100 without symbols (%)')
+
+
+###################################################################################################
+
+# Run the mathematical model:
+
+# Other Indices and parameters
+Loss = 0
+
+# Importing data directories from GitHub .csv file
+df = pd.read_csv('https://raw.githubusercontent.com/davidhernandezcuellar/DH-SCFSC/main/SCSSSC/data_directories.csv')
+# Converting data to Numpy array
+df_np = df.to_numpy()
+num_scenarios = df_np.shape[1] - 1 # count how many scenarios we have to analyze
+
+# Create a Data Frame to store the results of each scenario
+df_output = pd.DataFrame()
+
+
+# Create a pop-up window to ask if we want to consider a +/- % tolerance (variability) in the yield
+# Create a Tkinter root window (optional)
+root = tk.Tk()
+# Hide the root window (optional)
+# root.withdraw()
+
+# Display a message box with a question and get the user's response
+response = messagebox.askyesno('Question', 'Do you want to consider a tolerance in yield?', parent=root)
+if response == True:
+    yield_tol = get_float_input()
+
+# Close the Tkinter root window (optional)
+root.destroy()
+
+# For Loop to run the different scenarios
+for i in range(1, df_np.shape[1]):
+    # Loading the parameters of scenario "i"
+    parameters_network = df_np[0,i]
+    parameters_parcels = df_np[1,i]
+    parameters_depots = df_np[2,i]
+    parameters_process_plant = df_np[3,i]
+    parameters_warehouses = df_np[4,i]
+    parameters_customers = df_np[5,i]
+    transp_param = df_np[6,i]
+    parameters_T1 = df_np[7,i]
+    parameters_T2 = df_np[8,i]
+    parameters_T3 = df_np[9,i]
+    parameters_T4 = df_np[10,i]
+    parameters_T5 = df_np[11,i]
+    parameters_T6 = df_np[12,i]
+    parameters_T7 = df_np[13,i]
+    
+    name_scenario = df.columns[i] # Saving the name of the scenario
+    
+    # Process the user's response about the yield tolerance
+    if response == True:                
+        # We set a coefficient to modify the supply of the farms by -x% (yield_tol)
+        supply_factor = 1.0 - yield_tol /100 # it will multiply the supply in consideration
+
+        # Run the optimization model (function) of scenario "i"
+        obj_results = SCSSSC(parameters_network, parameters_parcels, parameters_depots, parameters_process_plant, parameters_warehouses, parameters_customers, Loss, transp_param, parameters_T1, parameters_T2, parameters_T3, parameters_T4, parameters_T5, parameters_T6, parameters_T7, supply_factor)
+
+        # Add (concatenate) the results of an optimization model to the Data Frame
+        df_output = pd.concat([df_output, pd.DataFrame(list(obj_results.items()),columns=['Variable', name_scenario + '_-' + str(yield_tol) + '%'])], axis=1)
+        
+        
+        #The supply of the farms is not modified
+        supply_factor = 1.0 # it will multiply the supply in consideration
+
+        # Run the optimization model (function) of scenario "i"
+        obj_results = SCSSSC(parameters_network, parameters_parcels, parameters_depots, parameters_process_plant, parameters_warehouses, parameters_customers, Loss, transp_param, parameters_T1, parameters_T2, parameters_T3, parameters_T4, parameters_T5, parameters_T6, parameters_T7, supply_factor)
+
+        # Add (concatenate) the results of an optimization model to the Data Frame
+        df_output = pd.concat([df_output, pd.DataFrame(list(obj_results.items()),columns=['Variable', name_scenario])], axis=1)
+        
+        
+        # We set a coefficient to modify the supply of the farms by +x% (yield_tol)
+        supply_factor = 1.0 + yield_tol /100 # it will multiply the supply in consideration
+
+        # Run the optimization model (function) of scenario "i"
+        obj_results = SCSSSC(parameters_network, parameters_parcels, parameters_depots, parameters_process_plant, parameters_warehouses, parameters_customers, Loss, transp_param, parameters_T1, parameters_T2, parameters_T3, parameters_T4, parameters_T5, parameters_T6, parameters_T7, supply_factor)
+
+        # Add (concatenate) the results of an optimization model to the Data Frame
+        df_output = pd.concat([df_output, pd.DataFrame(list(obj_results.items()),columns=['Variable', name_scenario + '_+' + str(yield_tol) + '%'])], axis=1)
+        
+    else:
+        # We can set a coefficient in case we want to modify the supply from the farms
+        supply_factor = 1.0 # it will multiply the supply in consideration
+        
+        # Run the optimization model (function) of scenario "i"
+        obj_results = SCSSSC(parameters_network, parameters_parcels, parameters_depots, parameters_process_plant, parameters_warehouses, parameters_customers, Loss, transp_param, parameters_T1, parameters_T2, parameters_T3, parameters_T4, parameters_T5, parameters_T6, parameters_T7, supply_factor)
+
+        # Add (concatenate) the results of an optimization model to the Data Frame
+        df_output = pd.concat([df_output, pd.DataFrame(list(obj_results.items()),columns=['Variable', name_scenario])], axis=1)
+
+
+###################################################################################################
+
+# Display the preliminary results from the optimization model
+
+pd.set_option("display.max_rows", 5000)
+pd.set_option("display.max_columns", 5000)
+
+df_output
+
+pd.reset_option("display.max_rows")
+pd.reset_option("display.max_columns")
+
+
+###################################################################################################
+
+# Stop the timer and print how much time it took to run the model
+
+end = timer()
+print("elapsed time: ", end - start, " seconds") # Time in seconds
